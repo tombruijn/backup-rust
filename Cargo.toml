@@ -1,0 +1,6 @@
+[package]
+name = "backup"
+version = "0.1.0"
+authors = ["Tom de Bruijn <tom@tomdebruijn.com>"]
+
+[dependencies]
