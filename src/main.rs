@@ -5,88 +5,53 @@ use std::process::{Command, Stdio};
 
 fn main() {
     let file = "/Users/tombruijn/Downloads/dont_backup/FreeBSD-11.1-RELEASE-amd64-dvd1.iso";
-    let process1 = match Command::new("tar")
-        .args(&["-zcvf", "-", file])
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .spawn() {
-            Err(why) => panic!("couldn't spawn tar: {}", why.description()),
-            Ok(process) => process,
-        };
 
-    let process2 = match Command::new("gzip")
-        .stdin(process1.stdout.unwrap())
-        .stdout(Stdio::piped())
-        .spawn() {
-            Err(why) => panic!("couldn't spawn tar: {}", why.description()),
-            Ok(process) => {
-                process
-            },
-        };
+    let archiver = archive(&file);
+    let compressor = compress(archiver.stdout.unwrap());
+    let stored_size = store("out.tar.gz", compressor.stdout.unwrap());
+    println!("stored backup size: {:?}", stored_size);
+}
 
-    let file = File::create("out.tar.gz").unwrap();
-    let mut process3 = Command::new("cat");
-    process3.stdin(Stdio::piped());
-    process3.stdout(file);
+fn archive(file: &str) -> std::process::Child {
+    let mut command = Command::new("tar");
+    command.args(&["-zcvf", "-", file]);
+    command.stdin(Stdio::null());
+    command.stdout(Stdio::piped());
+    return match command.spawn() {
+        Err(why) => panic!("couldn't spawn tar: {}", why.description()),
+        Ok(process) => process,
+    };
+}
 
-    match process3.spawn() {
+fn compress(stream: std::process::ChildStdout) -> std::process::Child {
+    let mut command = Command::new("gzip");
+    command.stdin(stream);
+    command.stdout(Stdio::piped());
+    return match command.spawn() {
+        Err(why) => panic!("couldn't spawn gzip: {}", why.description()),
+        Ok(process) => process,
+    };
+}
+
+// Only for testing purposes. The last process in the chain can store it. No need for `cat` to do
+// that. Only useful for the local file storage.
+fn store(file: &str, mut stream: std::process::ChildStdout) -> u64 {
+    let file = File::create(file).unwrap();
+    let mut command = Command::new("cat");
+    command.stdin(Stdio::piped());
+    command.stdout(file);
+    let process = match command.spawn() {
         Err(why) => panic!("couldn't spawn cat: {}", why.description()),
-        Ok(process) => {
-            let size = io::copy(&mut process2.stdout.unwrap(), &mut process.stdin.unwrap());
-            println!("size: {:?}", size.unwrap());
-        },
+        Ok(process) => process,
     };
 
-    // match process3.stdin {
-    //     Some(mut stdin) => {
-    //         match process2.stdout {
-    //             Some(mut out) => {
-    //                 let size = io::copy(&mut out, &mut stdin);
-    //                 println!("size: {:?}", size)
-    //             },
-    //             None => panic!("panic: {}")
-    //         }
-    //     },
-    //     None => {}
-    // };
-    // process3.wait().expect("shit");
-
-    // let stdout = match process2.stdout {
-    //     None => panic!("foo {}"),
-    //     Some(ref mut out) => {
-    //         println!("foo: {:?}", out);
-    //         let mut buffer = [0u8; 10];
-    //         let length = match out.read(&mut buffer) {
-    //             Ok(length) => length,
-    //             Err(why) => panic!("error: {}", why),
-    //         };
-    //         println!("length: {:?}, content: {:?}", length, buffer);
-    //     },
-    // };
-    // let mut buffer = Vec::new();
-    // match process2.stdout.unwrap().read_to_end(&mut buffer) {
-    //     Err(why) => panic!("couldn't read cat stdout: {}", why.description()),
-    //     Ok(size) => {
-    //         print!("cat responded with:\n{:?}", buffer);
-    //         println!("foo {:?}", buffer);
-    //         let mut file = File::create("out").unwrap();
-    //         let mut arr = [0u8; 10];
-    //         std::slice::bytes::copy_memory(&buffer, &mut arr);
-    //         file.write(arr);
-    //     },
-    // }
-
-    // let mut file = File::open("out").unwrap();
-    // // let mut buffer = [0; 10];
-    //
-    // // read up to 10 bytes
-    // // file.read(&mut buffer[..]).unwrap();
-    // let mut contents = String::new();
-    // file.read_to_string(&mut contents).unwrap();
-    // println!("read {:?}", contents);
-    // // let s = match str::from_utf8(buffer) {
-    // //     Ok(v) => v,
-    // //     Err(e) => panic!("Invalid UTF-8 sequence: {}", e),
-    // // };
-    // // println!("read: {:?}", s);
+    match process.stdin {
+        Some(mut stdin) => {
+            match io::copy(&mut stream, &mut stdin) {
+                Ok(size) => return size,
+                Err(why) => panic!("error {}", why)
+            }
+        },
+        None => panic!("foo")
+    }
 }
