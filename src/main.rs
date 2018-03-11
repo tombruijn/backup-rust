@@ -1,39 +1,68 @@
 use std::error::Error;
-use std::str;
+use std::io;
 use std::fs::File;
-use std::io::prelude::*;
 use std::process::{Command, Stdio};
 
 fn main() {
-    // "echo 122 | cat > out"
     let file = "/Users/tombruijn/Downloads/dont_backup/FreeBSD-11.1-RELEASE-amd64-dvd1.iso";
     let process1 = match Command::new("tar")
         .args(&["-zcvf", "-", file])
-        .stdin(Stdio::piped())
+        .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .spawn() {
             Err(why) => panic!("couldn't spawn tar: {}", why.description()),
             Ok(process) => process,
         };
 
-    let file = File::create("out.tar.gz").unwrap();
-    let mut process2 = match Command::new("gzip")
+    let process2 = match Command::new("gzip")
         .stdin(process1.stdout.unwrap())
-        .stdout(file)
+        .stdout(Stdio::piped())
         .spawn() {
             Err(why) => panic!("couldn't spawn tar: {}", why.description()),
-            Ok(process) => process,
+            Ok(process) => {
+                process
+            },
         };
 
-    // let mut process3 = match Command::new("cat")
-    //     .stdin(process2.stdout.unwrap())
-    //     .stdout(file)
-    //     .spawn() {
-    //         Err(why) => panic!("couldn't spawn cat: {}", why.description()),
-    //         Ok(process) => process,
-    //     };
+    let file = File::create("out.tar.gz").unwrap();
+    let mut process3 = Command::new("cat");
+    process3.stdin(Stdio::piped());
+    process3.stdout(file);
 
-    process2.wait().expect("shit");
+    match process3.spawn() {
+        Err(why) => panic!("couldn't spawn cat: {}", why.description()),
+        Ok(process) => {
+            let size = io::copy(&mut process2.stdout.unwrap(), &mut process.stdin.unwrap());
+            println!("size: {:?}", size.unwrap());
+        },
+    };
+
+    // match process3.stdin {
+    //     Some(mut stdin) => {
+    //         match process2.stdout {
+    //             Some(mut out) => {
+    //                 let size = io::copy(&mut out, &mut stdin);
+    //                 println!("size: {:?}", size)
+    //             },
+    //             None => panic!("panic: {}")
+    //         }
+    //     },
+    //     None => {}
+    // };
+    // process3.wait().expect("shit");
+
+    // let stdout = match process2.stdout {
+    //     None => panic!("foo {}"),
+    //     Some(ref mut out) => {
+    //         println!("foo: {:?}", out);
+    //         let mut buffer = [0u8; 10];
+    //         let length = match out.read(&mut buffer) {
+    //             Ok(length) => length,
+    //             Err(why) => panic!("error: {}", why),
+    //         };
+    //         println!("length: {:?}, content: {:?}", length, buffer);
+    //     },
+    // };
     // let mut buffer = Vec::new();
     // match process2.stdout.unwrap().read_to_end(&mut buffer) {
     //     Err(why) => panic!("couldn't read cat stdout: {}", why.description()),
@@ -46,7 +75,6 @@ fn main() {
     //         file.write(arr);
     //     },
     // }
-
 
     // let mut file = File::open("out").unwrap();
     // // let mut buffer = [0; 10];
